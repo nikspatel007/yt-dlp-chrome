@@ -194,13 +194,58 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
+def check_dependencies():
+    """Check that required dependencies are installed before starting."""
+    ok = True
+
+    # Check yt-dlp
+    try:
+        import yt_dlp
+        print(f'  yt-dlp {yt_dlp.version.__version__}')
+    except ImportError:
+        print('  yt-dlp ............ NOT FOUND')
+        print('    Install with: uv add yt-dlp')
+        ok = False
+
+    # Check ffmpeg
+    import shutil
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        print(f'  ffmpeg ............ {ffmpeg_path}')
+    else:
+        print('  ffmpeg ............ NOT FOUND')
+        if platform.system() == 'Darwin':
+            print('    Install with: brew install ffmpeg')
+        elif platform.system() == 'Windows':
+            print('    Install with: choco install ffmpeg')
+        else:
+            print('    Install ffmpeg from https://ffmpeg.org/download.html')
+        ok = False
+
+    # Check ffprobe
+    ffprobe_path = shutil.which('ffprobe')
+    if ffprobe_path:
+        print(f'  ffprobe ........... {ffprobe_path}')
+    else:
+        print('  ffprobe ........... NOT FOUND (usually installed with ffmpeg)')
+        ok = False
+
+    return ok
+
+
 def main():
+    print('Checking dependencies...')
+    if not check_dependencies():
+        print('\nMissing dependencies. Please install them and try again.')
+        return
+
+    print()
     host = '127.0.0.1'
     port = 8765
     server = ThreadedHTTPServer((host, port), Handler)
     print(f'yt-dlp server running on http://{host}:{port}')
     print(f'Downloads will be saved to: {get_download_dir()}')
-    print('Press Ctrl+C to stop')
+    print('Press Ctrl+C to stop\n')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
