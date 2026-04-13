@@ -3,6 +3,7 @@
 
 Listens on localhost:8765. Accepts download requests from the Chrome extension
 and uses yt-dlp as a library to download YouTube audio as 320kbps MP3.
+After download, runs audio analysis (BPM, key, waveform, phrases).
 
 Usage: python server.py
 """
@@ -11,6 +12,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -19,6 +21,9 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 
 import yt_dlp
+
+from analyzer import analyze_mp3
+from library import Library
 
 
 def get_download_dir():
@@ -36,14 +41,15 @@ def get_download_dir():
 active_downloads = set()
 active_downloads_lock = threading.Lock()
 
-# Download history: list of {title, filename, status, timestamp, url}
-download_history = []
-download_history_lock = threading.Lock()
-MAX_HISTORY = 50
+# Library instance (initialized in main)
+library = None
 
 YOUTUBE_URL_RE = re.compile(
     r'^https?://(www\.|m\.)?(youtube\.com/watch\?|youtu\.be/)'
 )
+
+# Directory where this script lives (for finding dj-view.html)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def download_audio(url):
@@ -81,7 +87,44 @@ def download_audio(url):
             'status': 'ok',
             'title': title,
             'filename': filename,
+            'url': url,
         }
+
+
+def download_and_analyze(url):
+    """Download audio and run analysis. Returns combined result."""
+    result = download_audio(url)
+
+    # Run analysis
+    analysis = None
+    try:
+        analysis = analyze_mp3(result['filename'])
+    except Exception as e:
+        print(f'  ⚠ Analysis failed: {e}', flush=True)
+
+    # Build track record
+    track = {
+        'title': result['title'],
+        'url': url,
+        'filename': result['filename'],
+        'status': 'ok',
+        'downloaded_at': time.time(),
+        'analyzed_at': time.time() if analysis else None,
+        'bpm': analysis['bpm'] if analysis else None,
+        'key': analysis['key'] if analysis else None,
+        'waveform': analysis['waveform'] if analysis else None,
+        'phrases': analysis['phrases'] if analysis else None,
+        'duration': analysis['duration'] if analysis else None,
+    }
+
+    # Save to library
+    library.add_track(track)
+
+    # Return response for the extension
+    response = dict(result)
+    if analysis:
+        response.update(analysis)
+    return response
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -96,6 +139,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, filepath):
+        try:
+            with open(filepath, 'r') as f:
+                body = f.read().encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        except FileNotFoundError:
+            self._send_json({'error': 'File not found'}, 404)
+
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""
         self._send_json({})
@@ -106,11 +161,12 @@ class Handler(BaseHTTPRequestHandler):
                 downloading = list(active_downloads)
             self._send_json({'status': 'ok', 'active': len(downloading)})
         elif self.path == '/downloads':
-            with download_history_lock:
-                history = list(download_history)
+            history = library.get_history_for_api()
             with active_downloads_lock:
                 active = list(active_downloads)
             self._send_json({'active': active, 'history': history})
+        elif self.path == '/dj':
+            self._send_html(os.path.join(SCRIPT_DIR, 'dj-view.html'))
         else:
             self._send_json({'error': 'Not found'}, 404)
 
@@ -159,27 +215,18 @@ class Handler(BaseHTTPRequestHandler):
             active_downloads.add(url)
 
         try:
-            result = download_audio(url)
-            with download_history_lock:
-                download_history.insert(0, {
-                    'title': result.get('title', 'Unknown'),
-                    'filename': result.get('filename', ''),
-                    'status': 'ok',
-                    'timestamp': time.time(),
-                })
-                del download_history[MAX_HISTORY:]
+            result = download_and_analyze(url)
             self._send_json(result)
         except Exception as e:
             print(f'✗ Error: {e}', flush=True)
-            with download_history_lock:
-                download_history.insert(0, {
-                    'title': url,
-                    'filename': '',
-                    'status': 'error',
-                    'error': str(e),
-                    'timestamp': time.time(),
-                })
-                del download_history[MAX_HISTORY:]
+            library.add_track({
+                'title': url,
+                'url': url,
+                'filename': '',
+                'status': 'error',
+                'error': str(e),
+                'downloaded_at': time.time(),
+            })
             self._send_json({'status': 'error', 'message': str(e)}, 500)
         finally:
             with active_downloads_lock:
@@ -201,14 +248,22 @@ def check_dependencies():
     # Check yt-dlp
     try:
         import yt_dlp
-        print(f'  yt-dlp {yt_dlp.version.__version__}')
+        print(f'  yt-dlp ............ {yt_dlp.version.__version__}')
     except ImportError:
         print('  yt-dlp ............ NOT FOUND')
         print('    Install with: uv add yt-dlp')
         ok = False
 
+    # Check librosa
+    try:
+        import librosa
+        print(f'  librosa ........... {librosa.__version__}')
+    except ImportError:
+        print('  librosa ........... NOT FOUND')
+        print('    Install with: uv add librosa')
+        ok = False
+
     # Check ffmpeg
-    import shutil
     ffmpeg_path = shutil.which('ffmpeg')
     if ffmpeg_path:
         print(f'  ffmpeg ............ {ffmpeg_path}')
@@ -234,17 +289,23 @@ def check_dependencies():
 
 
 def main():
+    global library
+
     print('Checking dependencies...')
     if not check_dependencies():
         print('\nMissing dependencies. Please install them and try again.')
         return
+
+    download_dir = get_download_dir()
+    library = Library(download_dir)
 
     print()
     host = '127.0.0.1'
     port = 8765
     server = ThreadedHTTPServer((host, port), Handler)
     print(f'yt-dlp server running on http://{host}:{port}')
-    print(f'Downloads will be saved to: {get_download_dir()}')
+    print(f'DJ View: http://{host}:{port}/dj')
+    print(f'Downloads will be saved to: {download_dir}')
     print('Press Ctrl+C to stop\n')
     try:
         server.serve_forever()
