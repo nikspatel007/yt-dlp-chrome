@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DJ Buddy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
+    background: #111; color: #e0e0e0; padding: 24px;
+  }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px;
+  }
+  .header h1 { font-size: 22px; color: #fff; }
+  .header .path { font-size: 13px; color: #666; }
+  .track-card {
+    background: #1a1a1a; border-radius: 10px; padding: 20px;
+    margin-bottom: 16px; border: 1px solid #282828;
+  }
+  .track-top {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .track-name { font-size: 17px; font-weight: 600; color: #fff; }
+  .badges { display: flex; gap: 8px; }
+  .badge-bpm {
+    background: #2a1a3a; color: #bb86fc; padding: 4px 12px;
+    border-radius: 6px; font-size: 13px; font-weight: 700;
+  }
+  .badge-key {
+    background: #1a2a3a; color: #64b5f6; padding: 4px 12px;
+    border-radius: 6px; font-size: 13px; font-weight: 700;
+  }
+  .phrases-bar {
+    display: flex; height: 22px; margin-bottom: 2px; gap: 1px;
+  }
+  .phrase-label {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600; border-radius: 2px;
+    text-transform: uppercase;
+  }
+  .waveform-large {
+    height: 80px; display: flex; align-items: end; gap: 0;
+    background: #0a0a0a; border-radius: 0 0 6px 6px; padding: 4px 2px;
+  }
+  .waveform-large .bar { flex: 1; min-width: 1px; }
+  .legend {
+    display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: #888;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 2px;
+  }
+  .empty-state {
+    text-align: center; color: #555; padding: 60px 0; font-size: 16px;
+  }
+  .track-error {
+    background: #1a1a1a; border-radius: 10px; padding: 14px 20px;
+    margin-bottom: 8px; border-left: 3px solid #c62828; color: #888;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>DJ Buddy</h1>
+  <div class="path" id="path"></div>
+</div>
+<div id="tracks"></div>
+
+<script>
+var PHRASE_COLORS = {
+  intro: '#1565c0', outro: '#1565c0',
+  verse: '#7b1fa2', build: '#e65100',
+  chorus: '#2e7d32', breakdown: '#c62828'
+};
+var PHRASE_TEXT_COLORS = {
+  intro: '#64b5f6', outro: '#64b5f6',
+  verse: '#bb86fc', build: '#ffb74d',
+  chorus: '#81c784', breakdown: '#ef9a9a'
+};
+var PHRASE_BG = {
+  intro: '#1a3a5a', outro: '#1a3a5a',
+  verse: '#2a1a3a', build: '#3a2a1a',
+  chorus: '#1a3a1a', breakdown: '#3a1a1a'
+};
+
+function getColorForTime(phrases, duration, time) {
+  if (!phrases || phrases.length === 0) return '#4caf50';
+  for (var i = 0; i < phrases.length; i++) {
+    if (time >= phrases[i].start && time < phrases[i].end) {
+      return PHRASE_COLORS[phrases[i].type] || '#4caf50';
+    }
+  }
+  return '#4caf50';
+}
+
+function renderTrack(track) {
+  if (track.status === 'error') {
+    return '<div class="track-error">&#10060; ' + track.title + ' — ' + (track.error || 'Download failed') + '</div>';
+  }
+
+  var hasBpm = track.bpm != null;
+  var hasWaveform = track.waveform && track.waveform.length > 0;
+  var hasPhrases = track.phrases && track.phrases.length > 0;
+
+  var badgesHtml = '';
+  if (hasBpm) {
+    badgesHtml = '<div class="badges">' +
+      '<span class="badge-bpm">' + track.bpm + ' BPM</span>' +
+      '<span class="badge-key">' + (track.key || '?') + '</span>' +
+    '</div>';
+  }
+
+  var phrasesHtml = '';
+  if (hasPhrases && track.duration) {
+    phrasesHtml = '<div class="phrases-bar">';
+    for (var i = 0; i < track.phrases.length; i++) {
+      var p = track.phrases[i];
+      var widthPct = ((p.end - p.start) / track.duration * 100);
+      var bg = PHRASE_BG[p.type] || '#222';
+      var color = PHRASE_TEXT_COLORS[p.type] || '#888';
+      var label = widthPct > 5 ? p.type : '';
+      phrasesHtml += '<div class="phrase-label" style="flex:' + widthPct + ';background:' + bg + ';color:' + color + '">' + label + '</div>';
+    }
+    phrasesHtml += '</div>';
+  }
+
+  var waveformHtml = '';
+  if (hasWaveform) {
+    waveformHtml = '<div class="waveform-large">';
+    for (var j = 0; j < track.waveform.length; j++) {
+      var v = track.waveform[j];
+      var time = track.duration ? (j / track.waveform.length) * track.duration : 0;
+      var barColor = hasPhrases ? getColorForTime(track.phrases, track.duration, time) : '#4caf50';
+      var height = Math.max(2, Math.round(v * 100));
+      waveformHtml += '<div class="bar" style="height:' + height + '%;background:' + barColor + '"></div>';
+    }
+    waveformHtml += '</div>';
+  }
+
+  var legendHtml = '';
+  if (hasPhrases) {
+    var seenTypes = {};
+    var types = [];
+    for (var k = 0; k < track.phrases.length; k++) {
+      var t = track.phrases[k].type;
+      if (!seenTypes[t]) {
+        seenTypes[t] = true;
+        types.push(t);
+      }
+    }
+    var labels = {
+      intro: 'Intro', outro: 'Outro', verse: 'Verse',
+      build: 'Build', chorus: 'Chorus/Drop', breakdown: 'Breakdown'
+    };
+    legendHtml = '<div class="legend">';
+    for (var m = 0; m < types.length; m++) {
+      legendHtml += '<div class="legend-item"><div class="legend-dot" style="background:' + PHRASE_COLORS[types[m]] + '"></div>' + (labels[types[m]] || types[m]) + '</div>';
+    }
+    legendHtml += '</div>';
+  }
+
+  return '<div class="track-card">' +
+    '<div class="track-top">' +
+      '<div class="track-name">' + track.title + '</div>' +
+      badgesHtml +
+    '</div>' +
+    phrasesHtml +
+    waveformHtml +
+    legendHtml +
+  '</div>';
+}
+
+function loadTracks() {
+  fetch('/downloads')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var container = document.getElementById('tracks');
+      if (data.history.length === 0) {
+        container.innerHTML = '<div class="empty-state">No tracks yet. Download some music!</div>';
+        return;
+      }
+      container.innerHTML = data.history.map(renderTrack).join('');
+    })
+    .catch(function() {
+      document.getElementById('tracks').innerHTML =
+        '<div class="empty-state">Cannot connect to server. Is it running?</div>';
+    });
+}
+
+loadTracks();
+setInterval(loadTracks, 5000);
+</script>
+</body>
+</html>
