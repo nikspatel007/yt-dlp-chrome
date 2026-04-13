@@ -47,4 +47,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(() => sendResponse({ status: 'error' }));
     return true;
   }
+
+  if (message.action === 'openDjView') {
+    chrome.tabs.create({ url: `${SERVER_URL}/dj` });
+    sendResponse({ status: 'ok' });
+    return true;
+  }
 });

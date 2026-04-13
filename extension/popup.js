@@ -7,6 +7,7 @@
   const notYoutube = document.getElementById('not-youtube');
   const downloadsSection = document.getElementById('downloads-section');
   const historyList = document.getElementById('history-list');
+  const djViewBtn = document.getElementById('dj-view-btn');
 
   let currentUrl = null;
 
@@ -20,38 +21,60 @@
     return Math.floor(seconds / 86400) + 'd ago';
   }
 
+  function renderWaveform(waveform) {
+    if (!waveform || waveform.length === 0) return '';
+    const targetBars = 60;
+    const step = Math.max(1, Math.floor(waveform.length / targetBars));
+    let bars = '';
+    for (let i = 0; i < waveform.length; i += step) {
+      const height = Math.max(2, Math.round(waveform[i] * 100));
+      bars += '<div class="waveform-bar" style="height:' + height + '%"></div>';
+    }
+    return '<div class="waveform">' + bars + '</div>';
+  }
+
   function renderHistory(data) {
     downloadsSection.style.display = 'block';
 
     if (data.history && data.history.length > 0) {
       historyList.innerHTML = data.history
-        .map((item, i) => {
-          const isError = item.status === 'error';
-          const cls = isError ? 'error' : 'done clickable';
-          const icon = isError ? '❌' : '✅';
-          const subtitle = isError
+        .map(function(item) {
+          var isError = item.status === 'error';
+          var cls = isError ? 'error' : 'done';
+          var subtitle = isError
             ? (item.error || 'Download failed')
             : timeAgo(item.timestamp);
-          const dataAttr = (!isError && item.filename)
-            ? ` data-filename="${item.filename.replace(/"/g, '&quot;')}" data-idx="${i}"`
+
+          var dataAttr = (!isError && item.filename)
+            ? ' data-filename="' + item.filename.replace(/"/g, '&quot;') + '"'
             : '';
-          return `
-            <div class="download-item ${cls}"${dataAttr}>
-              <span class="icon">${icon}</span>
-              <div class="info">
-                <div class="title">${item.title}</div>
-                <div class="time">${subtitle}</div>
-              </div>
-            </div>
-          `;
+
+          var badges = (!isError && item.bpm)
+            ? '<div class="track-badges">' +
+                '<span class="badge-bpm">' + item.bpm + ' BPM</span>' +
+                '<span class="badge-key">' + (item.key || '?') + '</span>' +
+              '</div>'
+            : '';
+
+          var waveform = (!isError && item.waveform)
+            ? renderWaveform(item.waveform)
+            : '';
+
+          return '<div class="download-item ' + cls + '"' + dataAttr + '>' +
+              '<div class="track-header">' +
+                '<div class="track-title">' + (isError ? '❌ ' : '') + item.title + '</div>' +
+                '<div class="track-time">' + subtitle + '</div>' +
+              '</div>' +
+              badges +
+              waveform +
+            '</div>';
         }).join('');
 
-      // Add click handlers to reveal files in Finder
-      historyList.querySelectorAll('.download-item.clickable').forEach(el => {
-        el.addEventListener('click', () => {
-          const filename = el.dataset.filename;
+      historyList.querySelectorAll('.download-item.done').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var filename = el.dataset.filename;
           if (filename) {
-            chrome.runtime.sendMessage({ action: 'reveal', filename });
+            chrome.runtime.sendMessage({ action: 'reveal', filename: filename });
           }
         });
       });
@@ -61,7 +84,7 @@
   }
 
   function loadDownloads() {
-    chrome.runtime.sendMessage({ action: 'getDownloads' }, (response) => {
+    chrome.runtime.sendMessage({ action: 'getDownloads' }, function(response) {
       if (response) renderHistory(response);
     });
   }
@@ -75,25 +98,25 @@
   function handleDownload() {
     if (!currentUrl) return;
 
-    setButtonState('downloading', 'Downloading...');
+    setButtonState('downloading', 'Downloading & Analyzing...');
 
     chrome.runtime.sendMessage(
       { action: 'download', url: currentUrl },
-      (response) => {
+      function(response) {
         if (!response || response.status === 'error') {
           setButtonState('error', (response && response.message) || 'Download failed');
-          setTimeout(() => setButtonState('ready', 'Download MP3 (320kbps)'), 5000);
+          setTimeout(function() { setButtonState('ready', 'Download MP3 (320kbps)'); }, 5000);
         } else {
-          setButtonState('done', '✓ Downloaded: ' + response.title);
+          var info = response.bpm ? ' (' + response.bpm + ' BPM, ' + response.key + ')' : '';
+          setButtonState('done', '✓ ' + response.title + info);
           loadDownloads();
-          setTimeout(() => setButtonState('ready', 'Download MP3 (320kbps)'), 3000);
+          setTimeout(function() { setButtonState('ready', 'Download MP3 (320kbps)'); }, 4000);
         }
       }
     );
   }
 
-  // Get current tab URL
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
     if (tabs[0] && tabs[0].url && YOUTUBE_RE.test(tabs[0].url)) {
       currentUrl = tabs[0].url;
       downloadSection.style.display = 'block';
@@ -106,8 +129,11 @@
 
   downloadBtn.addEventListener('click', handleDownload);
 
-  // Check server status
-  chrome.runtime.sendMessage({ action: 'healthCheck' }, (response) => {
+  djViewBtn.addEventListener('click', function() {
+    chrome.runtime.sendMessage({ action: 'openDjView' });
+  });
+
+  chrome.runtime.sendMessage({ action: 'healthCheck' }, function(response) {
     if (response && response.status === 'ok') {
       statusEl.className = 'status online';
       statusText.textContent = 'Server is running';
@@ -126,6 +152,5 @@
     }
   });
 
-  // Refresh history every 3 seconds
   setInterval(loadDownloads, 3000);
 })();
