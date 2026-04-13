@@ -1,0 +1,10 @@
+[project]
+name = "yt-dlp-chrome"
+version = "0.1.0"
+description = "Chrome extension for one-click MP3 downloads from YouTube"
+requires-python = ">=3.10"
+dependencies = [
+    "yt-dlp",
+    "yt-dlp-ejs>=0.8.0",
+]
+

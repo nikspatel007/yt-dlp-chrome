@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 340px;
+      padding: 16px;
+      font-family: 'Segoe UI', 'Roboto', sans-serif;
+      font-size: 14px;
+      color: #e0e0e0;
+      background: #1a1a1a;
+      margin: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      color: #fff;
+    }
+
+    h3 {
+      margin: 12px 0 8px 0;
+      font-size: 13px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .status.online { background: #1b3a1b; border: 1px solid #2e7d32; }
+    .status.offline { background: #3a1b1b; border: 1px solid #c62828; }
+    .status.checking { background: #2a2a2a; border: 1px solid #555; }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .online .dot { background: #4caf50; }
+    .offline .dot { background: #f44336; }
+    .checking .dot { background: #888; }
+
+    .help {
+      background: #222;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      background: #333;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      color: #4fc3f7;
+    }
+
+    /* Download button */
+    .download-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-bottom: 12px;
+    }
+
+    .download-btn.ready {
+      background: #065fd4;
+      color: #fff;
+    }
+
+    .download-btn.ready:hover {
+      background: #0556bf;
+    }
+
+    .download-btn.downloading {
+      background: #3e3e3e;
+      color: #aaa;
+      cursor: wait;
+    }
+
+    .download-btn.done {
+      background: #2e7d32;
+      color: #fff;
+    }
+
+    .download-btn.error {
+      background: #c62828;
+      color: #fff;
+    }
+
+    .download-btn:disabled {
+      background: #2a2a2a;
+      color: #555;
+      cursor: not-allowed;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .download-btn.downloading {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .not-youtube {
+      color: #888;
+      font-size: 13px;
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    /* Download history */
+    .download-list {
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .download-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: #222;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .download-item .icon { flex-shrink: 0; font-size: 14px; }
+
+    .download-item .info { flex: 1; min-width: 0; }
+
+    .download-item .title {
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .download-item .time {
+      color: #666;
+      font-size: 11px;
+    }
+
+    .download-item.done { border-left: 3px solid #4caf50; }
+    .download-item.error { border-left: 3px solid #f44336; }
+
+    .download-item.clickable {
+      cursor: pointer;
+    }
+
+    .download-item.clickable:hover {
+      background: #2a2a2a;
+    }
+
+    .empty {
+      color: #555;
+      font-size: 13px;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <h2>yt-dlp Audio Downloader</h2>
+
+  <div id="status" class="status checking">
+    <div class="dot"></div>
+    <span id="status-text">Checking server...</span>
+  </div>
+
+  <div id="help" class="help" style="display:none;"></div>
+
+  <div id="download-section" style="display:none;">
+    <button id="download-btn" class="download-btn ready" disabled>
+      Download MP3 (320kbps)
+    </button>
+  </div>
+
+  <div id="not-youtube" class="not-youtube" style="display:none;">
+    Navigate to a YouTube video to download audio.
+  </div>
+
+  <div id="downloads-section" style="display:none;">
+    <h3>Recent</h3>
+    <div id="history-list" class="download-list"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
